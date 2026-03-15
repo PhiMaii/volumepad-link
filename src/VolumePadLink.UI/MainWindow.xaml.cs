@@ -16,12 +16,30 @@ namespace VolumePadLink.UI;
 
 public sealed partial class MainWindow : Window
 {
+    private static readonly TimeSpan EventRefreshDebounce = TimeSpan.FromMilliseconds(300);
+    private static readonly HashSet<string> RefreshEventNames = new(StringComparer.Ordinal)
+    {
+        EventNames.AudioGraphChanged,
+        EventNames.AudioMasterChanged,
+        EventNames.AudioSessionAdded,
+        EventNames.AudioSessionUpdated,
+        EventNames.AudioSessionRemoved,
+        EventNames.DeviceConnected,
+        EventNames.DeviceDisconnected,
+        EventNames.DeviceCapabilitiesReceived,
+        EventNames.DeviceSettingsApplied,
+        EventNames.TargetActiveChanged
+    };
+
     private readonly BackendClient _backendClient = new();
     private readonly CancellationTokenSource _eventLoopCts = new();
-    private Task? _eventLoopTask;
+    private readonly SemaphoreSlim _refreshGate = new(1, 1);
 
+    private Task? _eventLoopTask;
     private bool _masterMuted;
     private IReadOnlyList<AudioSessionDto> _lastSessions = [];
+    private DateTimeOffset _lastEventDrivenRefreshUtc = DateTimeOffset.MinValue;
+    private int _eventRefreshScheduled;
 
     public MainWindow()
     {
@@ -54,12 +72,51 @@ public sealed partial class MainWindow : Window
                 // Ignore cancellation during shutdown.
             }
         }
+
+        _refreshGate.Dispose();
     }
 
     private Task OnBackendEventAsync(IpcMessage message)
     {
-        DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () => _ = RefreshAsync());
+        if (!RefreshEventNames.Contains(message.Name))
+        {
+            return Task.CompletedTask;
+        }
+
+        if (Interlocked.Exchange(ref _eventRefreshScheduled, 1) == 1)
+        {
+            return Task.CompletedTask;
+        }
+
+        DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () => _ = RefreshFromEventAsync());
         return Task.CompletedTask;
+    }
+
+    private async Task RefreshFromEventAsync()
+    {
+        try
+        {
+            await _refreshGate.WaitAsync();
+            try
+            {
+                var elapsed = DateTimeOffset.UtcNow - _lastEventDrivenRefreshUtc;
+                if (elapsed < EventRefreshDebounce)
+                {
+                    await Task.Delay(EventRefreshDebounce - elapsed);
+                }
+
+                await RefreshAsync();
+                _lastEventDrivenRefreshUtc = DateTimeOffset.UtcNow;
+            }
+            finally
+            {
+                _refreshGate.Release();
+            }
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _eventRefreshScheduled, 0);
+        }
     }
 
     private async Task RefreshAsync()
@@ -269,4 +326,3 @@ public sealed partial class MainWindow : Window
         }
     }
 }
-

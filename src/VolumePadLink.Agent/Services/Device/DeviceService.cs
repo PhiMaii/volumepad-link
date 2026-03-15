@@ -278,7 +278,7 @@ public sealed class DeviceService(
                 await HandleInputEventAsync(envelope.Payload, cancellationToken);
                 break;
             case "ack":
-                await eventHub.PublishAsync(EventNames.DiagnosticsWarning, new DiagnosticsEvent("Device ack received", envelope.RequestId), cancellationToken);
+                logger.LogDebug("Device ack received. RequestId={RequestId}", envelope.RequestId);
                 break;
             case "nack":
                 await eventHub.PublishAsync(EventNames.DiagnosticsError, new DiagnosticsEvent("Device nack received", envelope.Payload.ToString()), cancellationToken);
@@ -481,3 +481,4 @@ public sealed class DeviceService(
         }
     }
 }
+
