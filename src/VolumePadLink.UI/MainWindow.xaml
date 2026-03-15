@@ -39,8 +39,9 @@
                 <TextBlock Text="Device" FontSize="20" FontWeight="SemiBold" />
                 <TextBlock x:Name="DeviceStatusText" Text="Disconnected" />
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                    <TextBox x:Name="PortNameTextBox" Header="COM Port (optional)" Width="220" PlaceholderText="COM3" />
+                    <TextBox x:Name="PortNameTextBox" Header="COM Port (optional)" Width="220" PlaceholderText="COM3 or sim" />
                     <Button Content="Connect" Click="ConnectButton_Click" />
+                    <Button Content="Connect Simulator" Click="ConnectSimulatorButton_Click" />
                     <Button Content="Disconnect" Click="DisconnectButton_Click" />
                 </StackPanel>
             </StackPanel>
@@ -87,3 +88,4 @@
         </Grid>
     </ScrollViewer>
 </Window>
+

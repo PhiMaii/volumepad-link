@@ -16,7 +16,8 @@ public sealed class DeviceService(
     AgentStateStore stateStore,
     IEventHub eventHub,
     IOptions<AgentOptions> options,
-    ILogger<DeviceService> logger) : IDeviceService
+    ILogger<DeviceService> logger,
+    ILogger<SimulatedDeviceSession> simulatorLogger) : IDeviceService
 {
     private readonly SemaphoreSlim _sync = new(1, 1);
     private readonly Channel<string> _outbound = Channel.CreateUnbounded<string>();
@@ -27,6 +28,7 @@ public sealed class DeviceService(
     private CancellationTokenSource? _connectionCts;
     private Task? _readLoopTask;
     private Task? _writeLoopTask;
+    private SimulatedDeviceSession? _simulator;
 
     public event Func<DeviceInputEventDto, Task>? InputEventReceived;
     public event Func<DeviceStatusDto, Task>? DeviceStatusChanged;
@@ -55,6 +57,11 @@ public sealed class DeviceService(
                 return stateStore.GetDeviceStatus();
             }
 
+            if (IsSimulatorPort(resolvedPort))
+            {
+                return await ConnectSimulatorAsync(current, resolvedPort, cancellationToken);
+            }
+
             var serialPort = new SerialPort(resolvedPort, options.Value.DeviceBaudRate)
             {
                 NewLine = "\n",
@@ -66,7 +73,7 @@ public sealed class DeviceService(
             _port = serialPort;
             _reader = new StreamReader(serialPort.BaseStream);
             _writer = new StreamWriter(serialPort.BaseStream) { AutoFlush = true };
-            _connectionCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _connectionCts = new CancellationTokenSource();
 
             _readLoopTask = Task.Run(() => ReadLoopAsync(_connectionCts.Token), _connectionCts.Token);
             _writeLoopTask = Task.Run(() => WriteLoopAsync(_connectionCts.Token), _connectionCts.Token);
@@ -132,6 +139,37 @@ public sealed class DeviceService(
     public Task SendRawMessageAsync(string type, object payload, CancellationToken cancellationToken = default)
     {
         return EnqueueControlMessageAsync(type, payload, cancellationToken);
+    }
+
+    private async Task<DeviceStatusDto> ConnectSimulatorAsync(DeviceStatusDto current, string simulatorPort, CancellationToken cancellationToken)
+    {
+        _connectionCts = new CancellationTokenSource();
+        _simulator = new SimulatedDeviceSession(codec, HandleIncomingLineAsync, simulatorLogger);
+        await _simulator.StartAsync(_connectionCts.Token);
+
+        var status = current with
+        {
+            IsConnected = true,
+            PortName = simulatorPort,
+            DeviceId = "volumepad-sim",
+            FirmwareVersion = "sim-1.0",
+            LastSeenUtc = DateTimeOffset.UtcNow
+        };
+
+        stateStore.SetDeviceStatus(status);
+        await PublishStatusChangedAsync(status);
+        await eventHub.PublishAsync(EventNames.DeviceConnected, new DeviceConnectedEvent(status), cancellationToken);
+
+        await EnqueueControlMessageAsync("hello", new { app = "VolumePadLink.Agent", version = "1.0" }, cancellationToken);
+        await ApplySettingsAsync(stateStore.GetSettings(), cancellationToken);
+
+        logger.LogInformation("Connected to simulated device on port token {PortName}.", simulatorPort);
+        return status;
+    }
+
+    private static bool IsSimulatorPort(string portName)
+    {
+        return portName.StartsWith("sim", StringComparison.OrdinalIgnoreCase);
     }
 
     private string? ResolvePortName(string? requestedPortName, string? previousPortName)
@@ -326,6 +364,13 @@ public sealed class DeviceService(
         }
 
         var line = codec.Encode(type, payload, requestId: Guid.NewGuid().ToString("N"));
+
+        if (_simulator is not null)
+        {
+            await _simulator.ProcessOutboundAsync(line, cancellationToken);
+            return;
+        }
+
         await _outbound.Writer.WriteAsync(line, cancellationToken);
     }
 
@@ -345,6 +390,12 @@ public sealed class DeviceService(
     private async Task DisconnectUnsafeAsync(string reason, CancellationToken cancellationToken)
     {
         _connectionCts?.Cancel();
+
+        if (_simulator is not null)
+        {
+            await _simulator.DisposeAsync();
+            _simulator = null;
+        }
 
         try
         {
@@ -430,4 +481,3 @@ public sealed class DeviceService(
         }
     }
 }
-

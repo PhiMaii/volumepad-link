@@ -136,6 +136,20 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private async void ConnectSimulatorButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            PortNameTextBox.Text = "sim";
+            await _backendClient.SendCommandAsync<ConnectDeviceRequest, DeviceStatusResponse>(CommandNames.DeviceConnect, new ConnectDeviceRequest("sim"));
+            await RefreshAsync();
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = $"Simulator connect failed: {ex.Message}";
+        }
+    }
+
     private async void SelectMasterTargetButton_Click(object sender, RoutedEventArgs e)
     {
         try
@@ -255,3 +269,4 @@ public sealed partial class MainWindow : Window
         }
     }
 }
+
