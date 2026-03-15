@@ -1,4 +1,4 @@
-<Solution>
+﻿<Solution>
   <Configurations>
     <Platform Name="ARM64" />
     <Platform Name="x64" />
@@ -12,4 +12,5 @@
     <Platform Solution="*|x86" Project="x86" />
     <Deploy />
   </Project>
+  <Project Path="tests/VolumePadLink.Tests/VolumePadLink.Tests.csproj" Id="0f7c6a93-2ea4-4cae-8f95-9bf518416024" />
 </Solution>

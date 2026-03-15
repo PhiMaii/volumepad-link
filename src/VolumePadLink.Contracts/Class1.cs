@@ -1,7 +1,5 @@
-﻿namespace VolumePadLink.Contracts
-{
-    public class Class1
-    {
+﻿namespace VolumePadLink.Contracts;
 
-    }
+public static class ContractsAssemblyMarker
+{
 }

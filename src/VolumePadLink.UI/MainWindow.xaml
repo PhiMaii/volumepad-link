@@ -1,19 +1,89 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Window
     x:Class="VolumePadLink.UI.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:local="using:VolumePadLink.UI"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
-    Title="VolumePadLink.UI">
+    Title="VolumePad Link">
 
     <Window.SystemBackdrop>
         <MicaBackdrop />
     </Window.SystemBackdrop>
 
-    <Grid>
+    <ScrollViewer>
+        <Grid Padding="20" RowSpacing="16" ColumnSpacing="20">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2*" />
+                <ColumnDefinition Width="3*" />
+            </Grid.ColumnDefinitions>
 
-    </Grid>
+            <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Vertical" Spacing="8">
+                <TextBlock Text="Agent" FontSize="20" FontWeight="SemiBold" />
+                <TextBlock x:Name="AgentStatusText" Text="Unknown" />
+                <TextBlock x:Name="TargetStatusText" Text="Target: unknown" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="Refresh" Click="RefreshButton_Click" />
+                    <Button Content="Select Master" Click="SelectMasterTargetButton_Click" />
+                </StackPanel>
+            </StackPanel>
+
+            <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Vertical" Spacing="8">
+                <TextBlock Text="Device" FontSize="20" FontWeight="SemiBold" />
+                <TextBlock x:Name="DeviceStatusText" Text="Disconnected" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBox x:Name="PortNameTextBox" Header="COM Port (optional)" Width="220" PlaceholderText="COM3" />
+                    <Button Content="Connect" Click="ConnectButton_Click" />
+                    <Button Content="Disconnect" Click="DisconnectButton_Click" />
+                </StackPanel>
+            </StackPanel>
+
+            <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Vertical" Spacing="8">
+                <TextBlock Text="Master" FontSize="20" FontWeight="SemiBold" />
+                <Slider x:Name="MasterVolumeSlider" Minimum="0" Maximum="1" SmallChange="0.01" Width="280" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="Apply Master Volume" Click="ApplyMasterVolumeButton_Click" />
+                    <Button Content="Toggle Master Mute" Click="ToggleMasterMuteButton_Click" />
+                </StackPanel>
+            </StackPanel>
+
+            <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Vertical" Spacing="8">
+                <TextBlock Text="Settings" FontSize="20" FontWeight="SemiBold" />
+                <Grid ColumnSpacing="8" RowSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="DetentCountTextBox" Header="Detent Count" Grid.Column="0" />
+                    <TextBox x:Name="DetentStrengthTextBox" Header="Detent Strength" Grid.Column="1" />
+                    <TextBox x:Name="LedBrightnessTextBox" Header="LED Brightness" Grid.Column="2" />
+                    <TextBox x:Name="DisplayBrightnessTextBox" Header="Display Brightness" Grid.Column="3" />
+                </Grid>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <CheckBox x:Name="EncoderInvertCheckBox" Content="Invert Encoder" />
+                    <Button Content="Save Settings" Click="SaveSettingsButton_Click" />
+                </StackPanel>
+            </StackPanel>
+
+            <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Vertical" Spacing="8">
+                <TextBlock Text="Audio Sessions" FontSize="20" FontWeight="SemiBold" />
+                <ListView x:Name="SessionsListView" Height="260" SelectionMode="Single" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="Set Selected As Target" Click="SelectSessionTargetButton_Click" />
+                    <Button Content="Toggle Selected Session Mute" Click="ToggleSelectedSessionMuteButton_Click" />
+                </StackPanel>
+            </StackPanel>
+
+            <TextBlock Grid.Row="3" Grid.ColumnSpan="2" x:Name="StatusText" Text="Ready" />
+        </Grid>
+    </ScrollViewer>
 </Window>
