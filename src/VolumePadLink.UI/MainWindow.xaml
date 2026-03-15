@@ -49,9 +49,15 @@
 
             <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Vertical" Spacing="8">
                 <TextBlock Text="Master" FontSize="20" FontWeight="SemiBold" />
-                <Slider x:Name="MasterVolumeSlider" Minimum="0" Maximum="100" SmallChange="1" Width="280" />
+                <Slider
+                    x:Name="MasterVolumeSlider"
+                    Minimum="0"
+                    Maximum="100"
+                    SmallChange="1"
+                    Width="280"
+                    ValueChanged="MasterVolumeSlider_ValueChanged"
+                    PointerCaptureLost="MasterVolumeSlider_PointerCaptureLost" />
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                    <Button Content="Apply Master Volume" Click="ApplyMasterVolumeButton_Click" />
                     <Button Content="Toggle Master Mute" Click="ToggleMasterMuteButton_Click" />
                 </StackPanel>
             </StackPanel>
@@ -95,13 +101,15 @@
                                 <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="{x:Bind Display}" />
                                 <Slider
                                     Grid.Column="1"
+                                    Tag="{x:Bind}"
                                     Minimum="0"
                                     Maximum="100"
                                     Value="{x:Bind VolumePercent, Mode=TwoWay}"
                                     SmallChange="1"
-                                    VerticalAlignment="Center" />
+                                    VerticalAlignment="Center"
+                                    ValueChanged="SessionVolumeSlider_ValueChanged"
+                                    PointerCaptureLost="SessionVolumeSlider_PointerCaptureLost" />
                                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
-                                    <Button Content="Set Volume" Tag="{x:Bind}" Click="SetSessionVolumeButton_Click" />
                                     <Button Content="{x:Bind MuteButtonText}" Tag="{x:Bind}" Click="ToggleSessionMuteButton_Click" />
                                     <Button Content="Set Target" Tag="{x:Bind}" Click="SelectSessionTargetFromRowButton_Click" />
                                 </StackPanel>
