@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "VolumePadLink.UI (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "VolumePadLink.UI (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
