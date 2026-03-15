@@ -1,5 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
@@ -140,11 +141,15 @@ public sealed partial class MainWindow : Window
             var graphResponse = await _backendClient.SendCommandAsync<EmptyRequest, AudioGraphResponse>(CommandNames.AudioGetGraph, new EmptyRequest());
             var graph = graphResponse.Graph;
             _masterMuted = graph.Master.Muted;
-            MasterVolumeSlider.Value = graph.Master.Volume;
+            MasterVolumeSlider.Value = ScalarToPercent(graph.Master.Volume);
 
             _lastSessions = graph.Sessions;
             SessionsListView.ItemsSource = graph.Sessions
-                .Select(session => new AudioSessionItem(session.SessionId, session.DisplayName, session.Volume, session.Muted))
+                .Select(session => new AudioSessionItem(
+                    session.SessionId,
+                    string.IsNullOrWhiteSpace(session.DisplayName) ? session.SessionId : session.DisplayName,
+                    ScalarToPercent(session.Volume),
+                    session.Muted))
                 .ToList();
 
             var settingsResponse = await _backendClient.SendCommandAsync<EmptyRequest, SettingsResponse>(CommandNames.SettingsGet, new EmptyRequest());
@@ -163,6 +168,22 @@ public sealed partial class MainWindow : Window
         {
             StatusText.Text = $"Refresh failed: {ex.Message}";
         }
+    }
+
+    private static float PercentToScalar(double percent)
+    {
+        return (float)Math.Clamp(percent / 100d, 0d, 1d);
+    }
+
+    private static double ScalarToPercent(float value)
+    {
+        return Math.Clamp(value * 100d, 0d, 100d);
+    }
+
+    private static bool TryGetSessionItem(object sender, [NotNullWhen(true)] out AudioSessionItem? item)
+    {
+        item = (sender as FrameworkElement)?.Tag as AudioSessionItem;
+        return item is not null;
     }
 
     private void SelectAudioMode(AudioMode mode)
@@ -250,11 +271,11 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private async void SelectSessionTargetButton_Click(object sender, RoutedEventArgs e)
+    private async void SelectSessionTargetFromRowButton_Click(object sender, RoutedEventArgs e)
     {
-        if (SessionsListView.SelectedItem is not AudioSessionItem selected)
+        if (!TryGetSessionItem(sender, out var item))
         {
-            StatusText.Text = "Select a session first.";
+            StatusText.Text = "Session command failed: row context missing.";
             return;
         }
 
@@ -262,7 +283,7 @@ public sealed partial class MainWindow : Window
         {
             await _backendClient.SendCommandAsync<SelectTargetRequest, TargetResponse>(
                 CommandNames.TargetSelect,
-                new SelectTargetRequest(new ActiveTargetDto(TargetKinds.SessionById, selected.SessionId, null)));
+                new SelectTargetRequest(new ActiveTargetDto(TargetKinds.SessionById, item.SessionId, null)));
             await RefreshAsync();
         }
         catch (Exception ex)
@@ -277,7 +298,7 @@ public sealed partial class MainWindow : Window
         {
             await _backendClient.SendCommandAsync<SetMasterVolumeRequest, AckResponse>(
                 CommandNames.AudioSetMasterVolume,
-                new SetMasterVolumeRequest((float)MasterVolumeSlider.Value));
+                new SetMasterVolumeRequest(PercentToScalar(MasterVolumeSlider.Value)));
             await RefreshAsync();
         }
         catch (Exception ex)
@@ -301,26 +322,43 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private async void ToggleSelectedSessionMuteButton_Click(object sender, RoutedEventArgs e)
+    private async void SetSessionVolumeButton_Click(object sender, RoutedEventArgs e)
     {
-        if (SessionsListView.SelectedItem is not AudioSessionItem selected)
+        if (!TryGetSessionItem(sender, out var item))
         {
-            StatusText.Text = "Select a session first.";
-            return;
-        }
-
-        var match = _lastSessions.FirstOrDefault(s => string.Equals(s.SessionId, selected.SessionId, StringComparison.OrdinalIgnoreCase));
-        if (match is null)
-        {
-            StatusText.Text = "Session no longer available.";
+            StatusText.Text = "Session command failed: row context missing.";
             return;
         }
 
         try
         {
+            await _backendClient.SendCommandAsync<SetSessionVolumeRequest, AckResponse>(
+                CommandNames.AudioSetSessionVolume,
+                new SetSessionVolumeRequest(item.SessionId, PercentToScalar(item.VolumePercent)));
+            await RefreshAsync();
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = $"Session volume failed: {ex.Message}";
+        }
+    }
+
+    private async void ToggleSessionMuteButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!TryGetSessionItem(sender, out var item))
+        {
+            StatusText.Text = "Session command failed: row context missing.";
+            return;
+        }
+
+        var match = _lastSessions.FirstOrDefault(s => string.Equals(s.SessionId, item.SessionId, StringComparison.OrdinalIgnoreCase));
+        var currentMute = match?.Muted ?? item.Muted;
+
+        try
+        {
             await _backendClient.SendCommandAsync<SetSessionMuteRequest, AckResponse>(
                 CommandNames.AudioSetSessionMute,
-                new SetSessionMuteRequest(match.SessionId, !match.Muted));
+                new SetSessionMuteRequest(item.SessionId, !currentMute));
             await RefreshAsync();
         }
         catch (Exception ex)
@@ -357,3 +395,5 @@ public sealed partial class MainWindow : Window
         }
     }
 }
+
+
