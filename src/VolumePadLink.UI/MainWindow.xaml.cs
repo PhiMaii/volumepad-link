@@ -472,6 +472,32 @@ public sealed partial class MainWindow : Window
         return item is not null;
     }
 
+    private bool TryGetKnownSessionVolume(string sessionId, out float volume)
+    {
+        var known = _lastSessions.FirstOrDefault(x => string.Equals(x.SessionId, sessionId, StringComparison.OrdinalIgnoreCase));
+        if (known is null)
+        {
+            volume = 0f;
+            return false;
+        }
+
+        volume = known.Volume;
+        return true;
+    }
+
+    private void UpdateKnownSessionVolume(string sessionId, float volume)
+    {
+        var list = _lastSessions.ToList();
+        var index = list.FindIndex(x => string.Equals(x.SessionId, sessionId, StringComparison.OrdinalIgnoreCase));
+        if (index < 0)
+        {
+            return;
+        }
+
+        list[index] = list[index] with { Volume = volume };
+        _lastSessions = list;
+    }
+
     private void ScheduleMasterVolumeSend(bool immediate)
     {
         if (_suppressVolumeValueChanged)
@@ -554,7 +580,20 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            DispatcherQueue.TryEnqueue(() => StatusText.Text = $"Master volume failed: {ex.Message}");
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                _suppressVolumeValueChanged = true;
+                try
+                {
+                    MasterVolumeSlider.Value = ScalarToPercent(_lastMasterVolume);
+                }
+                finally
+                {
+                    _suppressVolumeValueChanged = false;
+                }
+
+                StatusText.Text = $"Master volume failed: {ex.Message}";
+            });
         }
         finally
         {
@@ -590,6 +629,8 @@ public sealed partial class MainWindow : Window
                 CommandNames.AudioSetSessionVolume,
                 new SetSessionVolumeRequest(sessionId, requested),
                 debounceCts.Token);
+
+            UpdateKnownSessionVolume(sessionId, requested);
         }
         catch (OperationCanceledException)
         {
@@ -597,7 +638,23 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            DispatcherQueue.TryEnqueue(() => StatusText.Text = $"Session volume failed: {ex.Message}");
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (_sessionItemsById.TryGetValue(sessionId, out var item) && TryGetKnownSessionVolume(sessionId, out var knownVolume))
+                {
+                    _suppressVolumeValueChanged = true;
+                    try
+                    {
+                        item.VolumePercent = ScalarToPercent(knownVolume);
+                    }
+                    finally
+                    {
+                        _suppressVolumeValueChanged = false;
+                    }
+                }
+
+                StatusText.Text = $"Session volume failed: {ex.Message}";
+            });
         }
         finally
         {
@@ -832,3 +889,6 @@ public sealed partial class MainWindow : Window
         }
     }
 }
+
+
+

@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Options;
 using VolumePadLink.Agent.Configuration;
 using VolumePadLink.Agent.Services.Interfaces;
 using VolumePadLink.Agent.State;
@@ -15,10 +15,14 @@ public sealed class AudioService(
     IOptions<AgentOptions> options,
     ILogger<AudioService> logger) : BackgroundService, IAudioService
 {
+    private static readonly TimeSpan GraphChangedMinInterval = TimeSpan.FromMilliseconds(100);
+    private const float VolumeEpsilon = 0.005f;
+
     private readonly SemaphoreSlim _backendGate = new(1, 1);
 
     private IAudioBackend? _backend;
     private AudioMode _backendMode = AudioMode.Real;
+    private DateTimeOffset _lastGraphChangedPublishedUtc = DateTimeOffset.MinValue;
 
     public event Func<AudioGraphDto, Task>? GraphChanged;
 
@@ -53,25 +57,25 @@ public sealed class AudioService(
     public async Task SetMasterVolumeAsync(float value, CancellationToken cancellationToken = default)
     {
         await ExecuteBackendWriteAsync(async backend => await backend.SetMasterVolumeAsync(value, cancellationToken), cancellationToken);
-        await PublishGraphFromBackendAsync(forcePublish: true, cancellationToken);
+        await PublishGraphFromBackendAsync(forcePublish: false, cancellationToken);
     }
 
     public async Task SetMasterMuteAsync(bool muted, CancellationToken cancellationToken = default)
     {
         await ExecuteBackendWriteAsync(async backend => await backend.SetMasterMuteAsync(muted, cancellationToken), cancellationToken);
-        await PublishGraphFromBackendAsync(forcePublish: true, cancellationToken);
+        await PublishGraphFromBackendAsync(forcePublish: false, cancellationToken);
     }
 
     public async Task SetSessionVolumeAsync(string sessionId, float value, CancellationToken cancellationToken = default)
     {
         await ExecuteBackendWriteAsync(async backend => await backend.SetSessionVolumeAsync(sessionId, value, cancellationToken), cancellationToken);
-        await PublishGraphFromBackendAsync(forcePublish: true, cancellationToken);
+        await PublishGraphFromBackendAsync(forcePublish: false, cancellationToken);
     }
 
     public async Task SetSessionMuteAsync(string sessionId, bool muted, CancellationToken cancellationToken = default)
     {
         await ExecuteBackendWriteAsync(async backend => await backend.SetSessionMuteAsync(sessionId, muted, cancellationToken), cancellationToken);
-        await PublishGraphFromBackendAsync(forcePublish: true, cancellationToken);
+        await PublishGraphFromBackendAsync(forcePublish: false, cancellationToken);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -228,11 +232,20 @@ public sealed class AudioService(
             }
         }
 
-        await eventHub.PublishAsync(EventNames.AudioGraphChanged, new AudioGraphChangedEvent(graph), cancellationToken);
-        await eventHub.PublishAsync(EventNames.AudioMasterChanged, new AudioMasterChangedEvent(graph.Master), cancellationToken);
-
         var previousById = previous.Sessions.ToDictionary(s => s.SessionId, StringComparer.OrdinalIgnoreCase);
         var currentById = graph.Sessions.ToDictionary(s => s.SessionId, StringComparer.OrdinalIgnoreCase);
+
+        var masterChanged = forcePublish || HasMasterControlChanged(previous.Master, graph.Master);
+
+        if (ShouldPublishGraphChanged(forcePublish))
+        {
+            await eventHub.PublishAsync(EventNames.AudioGraphChanged, new AudioGraphChangedEvent(graph), cancellationToken);
+        }
+
+        if (masterChanged)
+        {
+            await eventHub.PublishAsync(EventNames.AudioMasterChanged, new AudioMasterChangedEvent(graph.Master), cancellationToken);
+        }
 
         foreach (var current in graph.Sessions)
         {
@@ -242,7 +255,7 @@ public sealed class AudioService(
                 continue;
             }
 
-            if (!EquivalentSessionForEvents(old, current))
+            if (HasSessionControlChanged(old, current))
             {
                 await eventHub.PublishAsync(EventNames.AudioSessionUpdated, new AudioSessionChangedEvent(current), cancellationToken);
             }
@@ -257,18 +270,36 @@ public sealed class AudioService(
         }
     }
 
+    private bool ShouldPublishGraphChanged(bool forcePublish)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        if (forcePublish || now - _lastGraphChangedPublishedUtc >= GraphChangedMinInterval)
+        {
+            _lastGraphChangedPublishedUtc = now;
+            return true;
+        }
+
+        return false;
+    }
+
     private static bool EquivalentForEvents(AudioGraphDto left, AudioGraphDto right)
     {
-        if (left.Master.Volume != right.Master.Volume ||
-            left.Master.Muted != right.Master.Muted ||
-            left.Sessions.Count != right.Sessions.Count)
+        if (HasMasterControlChanged(left.Master, right.Master) || left.Sessions.Count != right.Sessions.Count)
         {
             return false;
         }
 
-        for (var i = 0; i < left.Sessions.Count; i++)
+        var rightById = right.Sessions.ToDictionary(s => s.SessionId, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var leftSession in left.Sessions)
         {
-            if (!EquivalentSessionForEvents(left.Sessions[i], right.Sessions[i]))
+            if (!rightById.TryGetValue(leftSession.SessionId, out var rightSession))
+            {
+                return false;
+            }
+
+            if (HasSessionControlChanged(leftSession, rightSession))
             {
                 return false;
             }
@@ -277,9 +308,21 @@ public sealed class AudioService(
         return true;
     }
 
-    private static bool EquivalentSessionForEvents(AudioSessionDto left, AudioSessionDto right)
+    private static bool HasMasterControlChanged(MasterAudioDto left, MasterAudioDto right)
     {
-        return left.SessionId == right.SessionId && left.Volume == right.Volume && left.Muted == right.Muted;
+        return !EquivalentVolume(left.Volume, right.Volume) || left.Muted != right.Muted;
+    }
+
+    private static bool HasSessionControlChanged(AudioSessionDto left, AudioSessionDto right)
+    {
+        return !string.Equals(left.SessionId, right.SessionId, StringComparison.OrdinalIgnoreCase) ||
+               !EquivalentVolume(left.Volume, right.Volume) ||
+               left.Muted != right.Muted;
+    }
+
+    private static bool EquivalentVolume(float left, float right)
+    {
+        return Math.Abs(left - right) < VolumeEpsilon;
     }
 
     private AudioMode ResolveEffectiveMode(AudioMode requested, out bool overridden)

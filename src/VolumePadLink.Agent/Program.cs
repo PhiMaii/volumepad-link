@@ -1,4 +1,4 @@
-﻿using VolumePadLink.Agent.Configuration;
+using VolumePadLink.Agent.Configuration;
 using VolumePadLink.Agent.IPC;
 using VolumePadLink.Agent.Services;
 using VolumePadLink.Agent.Services.Audio;
@@ -31,6 +31,8 @@ builder.Services.AddSingleton<TargetService>();
 builder.Services.AddSingleton<ITargetService>(sp => sp.GetRequiredService<TargetService>());
 
 builder.Services.AddSingleton<IDeviceProtocolCodec, DeviceProtocolCodec>();
+builder.Services.AddSingleton<IOutboundMessageScheduler, OutboundMessageScheduler>();
+builder.Services.AddSingleton<IReconnectPolicy, ReconnectPolicy>();
 builder.Services.AddSingleton<IDeviceService, DeviceService>();
 
 builder.Services.AddSingleton<IFramebufferRenderer, FramebufferRenderer>();
@@ -48,6 +50,9 @@ builder.Services.AddHostedService(sp => (PipeIpcServer)sp.GetRequiredService<IIp
 
 builder.Services.AddHostedService<StartupStateService>();
 builder.Services.AddHostedService<FeedbackService>();
+builder.Services.AddSingleton<DisplayUpdateTrigger>();
+builder.Services.AddSingleton<IDisplayUpdateTrigger>(sp => sp.GetRequiredService<DisplayUpdateTrigger>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<DisplayUpdateTrigger>());
 
 builder.Logging.AddSimpleConsole(options =>
 {
@@ -57,3 +62,5 @@ builder.Logging.AddSimpleConsole(options =>
 
 var host = builder.Build();
 await host.RunAsync();
+
+

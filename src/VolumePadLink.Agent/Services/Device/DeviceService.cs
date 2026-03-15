@@ -1,6 +1,5 @@
-﻿using System.IO.Ports;
+using System.IO.Ports;
 using System.Text.Json;
-using System.Threading.Channels;
 using Microsoft.Extensions.Options;
 using VolumePadLink.Agent.Configuration;
 using VolumePadLink.Agent.Services.Interfaces;
@@ -15,12 +14,13 @@ public sealed class DeviceService(
     IDeviceProtocolCodec codec,
     AgentStateStore stateStore,
     IEventHub eventHub,
+    IOutboundMessageScheduler outboundScheduler,
+    IReconnectPolicy reconnectPolicy,
     IOptions<AgentOptions> options,
     ILogger<DeviceService> logger,
     ILogger<SimulatedDeviceSession> simulatorLogger) : IDeviceService
 {
     private readonly SemaphoreSlim _sync = new(1, 1);
-    private readonly Channel<string> _outbound = Channel.CreateUnbounded<string>();
 
     private SerialPort? _port;
     private StreamReader? _reader;
@@ -29,6 +29,12 @@ public sealed class DeviceService(
     private Task? _readLoopTask;
     private Task? _writeLoopTask;
     private SimulatedDeviceSession? _simulator;
+    private CancellationTokenSource? _reconnectCts;
+    private Task? _reconnectTask;
+    private bool _manualReconnectSuppressed;
+    private int _reconnectAttempt;
+    private string? _lastReconnectReason;
+    private int _connectionGeneration;
 
     public event Func<DeviceInputEventDto, Task>? InputEventReceived;
     public event Func<DeviceStatusDto, Task>? DeviceStatusChanged;
@@ -39,11 +45,64 @@ public sealed class DeviceService(
         return Task.FromResult(stateStore.GetDeviceStatus());
     }
 
-    public async Task<DeviceStatusDto> ConnectAsync(string? portName = null, CancellationToken cancellationToken = default)
+    public Task<DeviceStatusDto> ConnectAsync(string? portName = null, CancellationToken cancellationToken = default)
+    {
+        return ConnectInternalAsync(portName, isExplicitRequest: true, cancellationToken);
+    }
+
+    public async Task<DeviceStatusDto> DisconnectAsync(CancellationToken cancellationToken = default)
     {
         await _sync.WaitAsync(cancellationToken);
         try
         {
+            _manualReconnectSuppressed = true;
+            StopReconnectLoopUnsafe();
+            await DisconnectUnsafeAsync("manual", allowReconnect: false, cancellationToken);
+            return stateStore.GetDeviceStatus();
+        }
+        finally
+        {
+            _sync.Release();
+        }
+    }
+
+    public Task<DeviceCapabilitiesDto?> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(stateStore.GetDeviceStatus().Capabilities);
+    }
+
+    public async Task ApplySettingsAsync(DeviceSettingsDto settings, CancellationToken cancellationToken = default)
+    {
+        stateStore.SetSettings(settings);
+        await EnqueueControlMessageAsync("settings.apply", settings, OutboundPriority.High, cancellationToken);
+    }
+
+    public Task SendDisplayModelAsync(DisplayModelDto model, CancellationToken cancellationToken = default)
+    {
+        return EnqueueControlMessageAsync("display.render", model, OutboundPriority.Normal, cancellationToken);
+    }
+
+    public Task SendLedMeterAsync(LedMeterModelDto model, CancellationToken cancellationToken = default)
+    {
+        return EnqueueControlMessageAsync("leds.meter", model, OutboundPriority.Low, cancellationToken);
+    }
+
+    public Task SendRawMessageAsync(string type, object payload, CancellationToken cancellationToken = default)
+    {
+        return EnqueueControlMessageAsync(type, payload, ResolvePriority(type), cancellationToken);
+    }
+
+    private async Task<DeviceStatusDto> ConnectInternalAsync(string? portName, bool isExplicitRequest, CancellationToken cancellationToken)
+    {
+        await _sync.WaitAsync(cancellationToken);
+        try
+        {
+            if (isExplicitRequest)
+            {
+                _manualReconnectSuppressed = false;
+                StopReconnectLoopUnsafe();
+            }
+
             var current = stateStore.GetDeviceStatus();
             if (current.IsConnected)
             {
@@ -75,6 +134,7 @@ public sealed class DeviceService(
             _writer = new StreamWriter(serialPort.BaseStream) { AutoFlush = true };
             _connectionCts = new CancellationTokenSource();
 
+            var generation = Interlocked.Increment(ref _connectionGeneration);
             _readLoopTask = Task.Run(() => ReadLoopAsync(_connectionCts.Token), _connectionCts.Token);
             _writeLoopTask = Task.Run(() => WriteLoopAsync(_connectionCts.Token), _connectionCts.Token);
 
@@ -90,7 +150,12 @@ public sealed class DeviceService(
             await PublishStatusChangedAsync(status);
             await eventHub.PublishAsync(EventNames.DeviceConnected, new DeviceConnectedEvent(status), cancellationToken);
 
-            await EnqueueControlMessageAsync("hello", new { app = "VolumePadLink.Agent", version = "1.0" }, cancellationToken);
+            if (status.Capabilities is not null)
+            {
+                await PublishCapabilitiesAsync(status.Capabilities, cancellationToken);
+            }
+
+            await EnqueueControlMessageAsync("hello", new { app = "VolumePadLink.Agent", version = "1.0" }, OutboundPriority.High, cancellationToken, generation);
             await ApplySettingsAsync(stateStore.GetSettings(), cancellationToken);
 
             return status;
@@ -101,51 +166,13 @@ public sealed class DeviceService(
         }
     }
 
-    public async Task<DeviceStatusDto> DisconnectAsync(CancellationToken cancellationToken = default)
-    {
-        await _sync.WaitAsync(cancellationToken);
-        try
-        {
-            await DisconnectUnsafeAsync("manual", cancellationToken);
-            return stateStore.GetDeviceStatus();
-        }
-        finally
-        {
-            _sync.Release();
-        }
-    }
-
-    public Task<DeviceCapabilitiesDto?> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
-    {
-        return Task.FromResult(stateStore.GetDeviceStatus().Capabilities);
-    }
-
-    public async Task ApplySettingsAsync(DeviceSettingsDto settings, CancellationToken cancellationToken = default)
-    {
-        stateStore.SetSettings(settings);
-        await EnqueueControlMessageAsync("settings.apply", settings, cancellationToken);
-    }
-
-    public Task SendDisplayModelAsync(DisplayModelDto model, CancellationToken cancellationToken = default)
-    {
-        return EnqueueControlMessageAsync("display.render", model, cancellationToken);
-    }
-
-    public Task SendLedMeterAsync(LedMeterModelDto model, CancellationToken cancellationToken = default)
-    {
-        return EnqueueControlMessageAsync("leds.meter", model, cancellationToken);
-    }
-
-    public Task SendRawMessageAsync(string type, object payload, CancellationToken cancellationToken = default)
-    {
-        return EnqueueControlMessageAsync(type, payload, cancellationToken);
-    }
-
     private async Task<DeviceStatusDto> ConnectSimulatorAsync(DeviceStatusDto current, string simulatorPort, CancellationToken cancellationToken)
     {
         _connectionCts = new CancellationTokenSource();
         _simulator = new SimulatedDeviceSession(codec, HandleIncomingLineAsync, simulatorLogger);
         await _simulator.StartAsync(_connectionCts.Token);
+
+        Interlocked.Increment(ref _connectionGeneration);
 
         var status = current with
         {
@@ -160,7 +187,12 @@ public sealed class DeviceService(
         await PublishStatusChangedAsync(status);
         await eventHub.PublishAsync(EventNames.DeviceConnected, new DeviceConnectedEvent(status), cancellationToken);
 
-        await EnqueueControlMessageAsync("hello", new { app = "VolumePadLink.Agent", version = "1.0" }, cancellationToken);
+        if (status.Capabilities is not null)
+        {
+            await PublishCapabilitiesAsync(status.Capabilities, cancellationToken);
+        }
+
+        await EnqueueControlMessageAsync("hello", new { app = "VolumePadLink.Agent", version = "1.0" }, OutboundPriority.High, cancellationToken);
         await ApplySettingsAsync(stateStore.GetSettings(), cancellationToken);
 
         logger.LogInformation("Connected to simulated device on port token {PortName}.", simulatorPort);
@@ -206,7 +238,7 @@ public sealed class DeviceService(
                 var line = await _reader.ReadLineAsync(cancellationToken);
                 if (line is null)
                 {
-                    await DisconnectForErrorAsync("Device stream closed", cancellationToken);
+                    await DisconnectForErrorAsync("stream-closed", cancellationToken);
                     break;
                 }
 
@@ -232,26 +264,39 @@ public sealed class DeviceService(
 
     private async Task WriteLoopAsync(CancellationToken cancellationToken)
     {
-        while (await _outbound.Reader.WaitToReadAsync(cancellationToken))
+        while (!cancellationToken.IsCancellationRequested)
         {
-            while (_outbound.Reader.TryRead(out var line))
-            {
-                try
-                {
-                    if (_writer is null)
-                    {
-                        return;
-                    }
+            OutboundMessage outbound;
 
-                    await _writer.WriteLineAsync(line);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
+            try
+            {
+                outbound = await outboundScheduler.DequeueAsync(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+
+            try
+            {
+                if (outbound.Generation != Volatile.Read(ref _connectionGeneration))
                 {
-                    logger.LogWarning(ex, "Device write loop failed.");
-                    await eventHub.PublishAsync(EventNames.DiagnosticsWarning, new DiagnosticsEvent("Device write loop failed", ex.Message), cancellationToken);
-                    await DisconnectForErrorAsync("write-failure", cancellationToken);
+                    continue;
+                }
+
+                if (_writer is null)
+                {
                     return;
                 }
+
+                await _writer.WriteLineAsync(outbound.Line);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Device write loop failed.");
+                await eventHub.PublishAsync(EventNames.DiagnosticsWarning, new DiagnosticsEvent("Device write loop failed", ex.Message), cancellationToken);
+                await DisconnectForErrorAsync("write-failure", cancellationToken);
+                return;
             }
         }
     }
@@ -309,7 +354,11 @@ public sealed class DeviceService(
 
         stateStore.SetDeviceStatus(status);
         await PublishStatusChangedAsync(status);
+        await PublishCapabilitiesAsync(capabilities, cancellationToken);
+    }
 
+    private async Task PublishCapabilitiesAsync(DeviceCapabilitiesDto capabilities, CancellationToken cancellationToken)
+    {
         if (CapabilitiesReceived is { } handlers)
         {
             foreach (Func<DeviceCapabilitiesDto, Task> handler in handlers.GetInvocationList())
@@ -356,7 +405,12 @@ public sealed class DeviceService(
         }
     }
 
-    private async Task EnqueueControlMessageAsync(string type, object? payload, CancellationToken cancellationToken)
+    private async Task EnqueueControlMessageAsync(
+        string type,
+        object? payload,
+        OutboundPriority priority,
+        CancellationToken cancellationToken,
+        int? generationOverride = null)
     {
         if (!stateStore.GetDeviceStatus().IsConnected)
         {
@@ -371,7 +425,8 @@ public sealed class DeviceService(
             return;
         }
 
-        await _outbound.Writer.WriteAsync(line, cancellationToken);
+        var generation = generationOverride ?? Volatile.Read(ref _connectionGeneration);
+        await outboundScheduler.EnqueueAsync(new OutboundMessage(line, generation), priority, cancellationToken);
     }
 
     private async Task DisconnectForErrorAsync(string reason, CancellationToken cancellationToken)
@@ -379,7 +434,7 @@ public sealed class DeviceService(
         await _sync.WaitAsync(cancellationToken);
         try
         {
-            await DisconnectUnsafeAsync(reason, cancellationToken);
+            await DisconnectUnsafeAsync(reason, allowReconnect: true, cancellationToken);
         }
         finally
         {
@@ -387,7 +442,7 @@ public sealed class DeviceService(
         }
     }
 
-    private async Task DisconnectUnsafeAsync(string reason, CancellationToken cancellationToken)
+    private async Task DisconnectUnsafeAsync(string reason, bool allowReconnect, CancellationToken cancellationToken)
     {
         _connectionCts?.Cancel();
 
@@ -455,13 +510,123 @@ public sealed class DeviceService(
         var disconnected = previous with
         {
             IsConnected = false,
-            Capabilities = previous.Capabilities,
             LastSeenUtc = DateTimeOffset.UtcNow
         };
         stateStore.SetDeviceStatus(disconnected);
 
         await PublishStatusChangedAsync(disconnected);
         await eventHub.PublishAsync(EventNames.DeviceDisconnected, new DeviceDisconnectedEvent(reason), cancellationToken);
+
+        if (allowReconnect && !_manualReconnectSuppressed && !string.IsNullOrWhiteSpace(disconnected.PortName))
+        {
+            StartReconnectLoopUnsafe(disconnected.PortName, reason);
+        }
+    }
+
+    private void StartReconnectLoopUnsafe(string portName, string reason)
+    {
+        if (_reconnectTask is { IsCompleted: false })
+        {
+            return;
+        }
+
+        _lastReconnectReason = reason;
+        _reconnectAttempt = 0;
+        _reconnectCts = new CancellationTokenSource();
+        var reconnectToken = _reconnectCts.Token;
+
+        _ = eventHub.PublishAsync(
+            EventNames.DiagnosticsWarning,
+            new DiagnosticsEvent($"Device disconnected ({reason}). Starting reconnect loop for {portName}."),
+            reconnectToken);
+
+        _reconnectTask = Task.Run(() => ReconnectLoopAsync(portName, reconnectToken), reconnectToken);
+    }
+
+    private async Task ReconnectLoopAsync(string fallbackPortName, CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            if (_manualReconnectSuppressed)
+            {
+                return;
+            }
+
+            var status = stateStore.GetDeviceStatus();
+            if (status.IsConnected)
+            {
+                return;
+            }
+
+            var portName = string.IsNullOrWhiteSpace(status.PortName) ? fallbackPortName : status.PortName;
+            if (string.IsNullOrWhiteSpace(portName))
+            {
+                return;
+            }
+
+            _reconnectAttempt++;
+            var delay = reconnectPolicy.GetDelay(_reconnectAttempt);
+
+            try
+            {
+                await Task.Delay(delay, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            try
+            {
+                var connected = await ConnectInternalAsync(portName, isExplicitRequest: false, cancellationToken);
+                if (connected.IsConnected)
+                {
+                    await eventHub.PublishAsync(
+                        EventNames.DiagnosticsWarning,
+                        new DiagnosticsEvent($"Reconnect succeeded after {_reconnectAttempt} attempt(s).", _lastReconnectReason),
+                        cancellationToken);
+                    return;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Reconnect attempt {Attempt} failed for {PortName}.", _reconnectAttempt, portName);
+            }
+        }
+    }
+
+    private void StopReconnectLoopUnsafe()
+    {
+        if (_reconnectCts is null)
+        {
+            return;
+        }
+
+        _reconnectCts.Cancel();
+        _reconnectCts.Dispose();
+        _reconnectCts = null;
+        _reconnectTask = null;
+        _reconnectAttempt = 0;
+        _lastReconnectReason = null;
+    }
+
+    private static OutboundPriority ResolvePriority(string type)
+    {
+        if (type.StartsWith("leds.", StringComparison.OrdinalIgnoreCase))
+        {
+            return OutboundPriority.Low;
+        }
+
+        if (type.StartsWith("display.", StringComparison.OrdinalIgnoreCase))
+        {
+            return OutboundPriority.Normal;
+        }
+
+        return OutboundPriority.High;
     }
 
     private static T GetOrDefault<T>(JsonElement element, string propertyName, T defaultValue)
@@ -481,4 +646,3 @@ public sealed class DeviceService(
         }
     }
 }
-
