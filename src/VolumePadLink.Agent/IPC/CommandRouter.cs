@@ -4,6 +4,7 @@ using VolumePadLink.Agent.Services.Interfaces;
 using VolumePadLink.Agent.State;
 using VolumePadLink.Contracts.Abstractions;
 using VolumePadLink.Contracts.Commands;
+using VolumePadLink.Contracts.DTOs;
 
 namespace VolumePadLink.Agent.IPC;
 
@@ -42,7 +43,7 @@ public sealed class CommandRouter(
                 CommandNames.DeviceDisconnect => CreateResponse(responseId, command.Name, new DeviceStatusResponse(await deviceService.DisconnectAsync(cancellationToken))),
                 CommandNames.DeviceGetCapabilities => CreateResponse(responseId, command.Name, new DeviceCapabilitiesResponse(await deviceService.GetCapabilitiesAsync(cancellationToken))),
 
-                CommandNames.SettingsGet => CreateResponse(responseId, command.Name, new SettingsResponse(stateStore.GetSettings())),
+                CommandNames.SettingsGet => CreateResponse(responseId, command.Name, new SettingsResponse(stateStore.GetAppSettings())),
                 CommandNames.SettingsUpdate => await HandleSettingsUpdateAsync(command, responseId, cancellationToken),
 
                 _ => CreateError(responseId, command.Name, $"Unknown command '{command.Name}'.")
@@ -101,13 +102,15 @@ public sealed class CommandRouter(
     private async Task<IpcMessage> HandleSettingsUpdateAsync(IpcMessage command, string responseId, CancellationToken cancellationToken)
     {
         var request = DeserializePayload<UpdateSettingsRequest>(command.Payload);
-        stateStore.SetSettings(request.Settings);
 
-        await deviceService.ApplySettingsAsync(request.Settings, cancellationToken);
+        stateStore.SetAppSettings(request.Settings);
+
+        await audioService.SetModeAsync(request.Settings.AudioMode, cancellationToken);
+        await deviceService.ApplySettingsAsync(request.Settings.Device, cancellationToken);
         await PersistCurrentStateAsync(cancellationToken);
 
-        await eventHub.PublishAsync(EventNames.DeviceSettingsApplied, new DeviceSettingsAppliedEvent(request.Settings), cancellationToken);
-        return CreateResponse(responseId, command.Name, new SettingsResponse(request.Settings));
+        await eventHub.PublishAsync(EventNames.DeviceSettingsApplied, new DeviceSettingsAppliedEvent(request.Settings.Device), cancellationToken);
+        return CreateResponse(responseId, command.Name, new SettingsResponse(stateStore.GetAppSettings()));
     }
 
     private async Task PersistCurrentStateAsync(CancellationToken cancellationToken)
@@ -115,6 +118,7 @@ public sealed class CommandRouter(
         await settingsStore.SaveAsync(new StoredAgentSettings(
             stateStore.GetActiveTarget(),
             stateStore.GetSettings(),
+            stateStore.GetAudioMode(),
             stateStore.GetDeviceStatus().PortName), cancellationToken);
     }
 

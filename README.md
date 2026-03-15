@@ -12,10 +12,12 @@ VolumePad Link is the Windows companion app for the VolumePad hardware controlle
 ## Features
 
 - Control master and per-app volume
+- Real Windows Core Audio backend with runtime mode switching
+- Simulated audio backend fallback for development/testing
 - Receive button and encoder events from the device
 - Send device settings like detent count and strength
 - Stream display data and LED meter updates to the device
-- Built-in simulator mode for hardware-free testing
+- Built-in simulator mode for hardware-free device testing
 
 ## Simulator mode
 
@@ -30,6 +32,15 @@ The simulator emits:
 - periodic encoder rotate events
 - periodic button press events
 - `ack`/`nack` for control messages
+
+## Audio mode
+
+Audio mode is configurable in settings:
+
+- `Real` - Windows Core Audio sessions/endpoints
+- `Simulated` - synthetic audio sessions for development/testing
+
+An optional config override is available through `Agent.AudioModeOverride` in `src/VolumePadLink.Agent/appsettings.json`.
 
 ## Architecture
 

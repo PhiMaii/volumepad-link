@@ -19,6 +19,10 @@ builder.Services.AddSingleton<AgentStateStore>();
 builder.Services.AddSingleton<IEventHub, EventHub>();
 builder.Services.AddSingleton<ISettingsStore, JsonSettingsStore>();
 
+builder.Services.AddTransient<CoreAudioBackend>();
+builder.Services.AddTransient<SimulatedAudioBackend>();
+builder.Services.AddSingleton<IAudioBackendFactory, AudioBackendFactory>();
+
 builder.Services.AddSingleton<AudioService>();
 builder.Services.AddSingleton<IAudioService>(sp => sp.GetRequiredService<AudioService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<AudioService>());
@@ -53,4 +57,3 @@ builder.Logging.AddSimpleConsole(options =>
 
 var host = builder.Build();
 await host.RunAsync();
-

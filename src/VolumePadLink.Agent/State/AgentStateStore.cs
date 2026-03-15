@@ -15,6 +15,7 @@ public sealed class AgentStateStore
     private MeterSourceDto _meterSource = new(MeterSourceKinds.ActiveTarget, null, null);
     private DeviceStatusDto _deviceStatus = new(false, null, null, null, null, null);
     private DeviceSettingsDto _settings = new(24, 0.65f, 0.4f, 0.8f, 0.8f, false, 450);
+    private AudioMode _audioMode = AudioMode.Real;
     private string _activeProfile = "Default";
 
     public AudioGraphDto GetAudioGraph()
@@ -94,6 +95,39 @@ public sealed class AgentStateStore
         lock (_sync)
         {
             _settings = settings;
+        }
+    }
+
+    public AudioMode GetAudioMode()
+    {
+        lock (_sync)
+        {
+            return _audioMode;
+        }
+    }
+
+    public void SetAudioMode(AudioMode mode)
+    {
+        lock (_sync)
+        {
+            _audioMode = mode;
+        }
+    }
+
+    public AppSettingsDto GetAppSettings()
+    {
+        lock (_sync)
+        {
+            return new AppSettingsDto(_settings, _audioMode);
+        }
+    }
+
+    public void SetAppSettings(AppSettingsDto settings)
+    {
+        lock (_sync)
+        {
+            _settings = settings.Device;
+            _audioMode = settings.AudioMode;
         }
     }
 

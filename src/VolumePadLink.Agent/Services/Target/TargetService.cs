@@ -150,6 +150,7 @@ public sealed class TargetService(
         var settings = stateStore.GetSettings();
         var target = stateStore.GetActiveTarget();
         var status = stateStore.GetDeviceStatus();
-        await settingsStore.SaveAsync(new StoredAgentSettings(target, settings, status.PortName), cancellationToken);
+        await settingsStore.SaveAsync(new StoredAgentSettings(target, settings, stateStore.GetAudioMode(), status.PortName), cancellationToken);
     }
 }
+

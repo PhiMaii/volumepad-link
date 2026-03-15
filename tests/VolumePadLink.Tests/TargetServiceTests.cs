@@ -41,12 +41,24 @@ public sealed class TargetServiceTests
     private sealed class FakeAudioService : IAudioService
     {
         private AudioGraphDto _graph = CreateGraph([]);
+        private AudioMode _mode = AudioMode.Simulated;
 
         public event Func<AudioGraphDto, Task>? GraphChanged;
 
         public Task<AudioGraphDto> GetGraphAsync(CancellationToken cancellationToken = default)
         {
             return Task.FromResult(_graph);
+        }
+
+        public Task<AudioMode> GetModeAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(_mode);
+        }
+
+        public Task<AudioMode> SetModeAsync(AudioMode mode, CancellationToken cancellationToken = default)
+        {
+            _mode = mode;
+            return Task.FromResult(_mode);
         }
 
         public Task SetMasterVolumeAsync(float value, CancellationToken cancellationToken = default) => Task.CompletedTask;
@@ -66,7 +78,11 @@ public sealed class TargetServiceTests
 
     private sealed class FakeSettingsStore : ISettingsStore
     {
-        private StoredAgentSettings _settings = new(new ActiveTargetDto(TargetKinds.Master, null, null), new DeviceSettingsDto(24, 0.5f, 0.4f, 0.8f, 0.8f, false, 450), null);
+        private StoredAgentSettings _settings = new(
+            new ActiveTargetDto(TargetKinds.Master, null, null),
+            new DeviceSettingsDto(24, 0.5f, 0.4f, 0.8f, 0.8f, false, 450),
+            AudioMode.Simulated,
+            null);
 
         public Task<StoredAgentSettings> LoadAsync(CancellationToken cancellationToken = default)
         {

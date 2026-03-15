@@ -10,4 +10,4 @@ public sealed record AudioGraphResponse(AudioGraphDto Graph);
 public sealed record TargetResponse(ActiveTargetDto Target);
 public sealed record DeviceStatusResponse(DeviceStatusDto Status);
 public sealed record DeviceCapabilitiesResponse(DeviceCapabilitiesDto? Capabilities);
-public sealed record SettingsResponse(DeviceSettingsDto Settings);
+public sealed record SettingsResponse(AppSettingsDto Settings);

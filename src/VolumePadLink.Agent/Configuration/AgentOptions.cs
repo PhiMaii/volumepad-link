@@ -14,4 +14,5 @@ public sealed class AgentOptions
     public int DeviceBaudRate { get; set; } = 115200;
     public string? PreferredDevicePort { get; set; }
     public string? SettingsPath { get; set; }
+    public string? AudioModeOverride { get; set; }
 }

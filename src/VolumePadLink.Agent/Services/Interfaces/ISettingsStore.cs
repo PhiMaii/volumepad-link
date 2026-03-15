@@ -12,4 +12,5 @@ public interface ISettingsStore
 public sealed record StoredAgentSettings(
     ActiveTargetDto ActiveTarget,
     DeviceSettingsDto DeviceSettings,
+    AudioMode AudioMode,
     string? PreferredDevicePort);

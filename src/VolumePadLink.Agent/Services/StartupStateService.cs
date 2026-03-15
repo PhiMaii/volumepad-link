@@ -15,9 +15,12 @@ public sealed class StartupStateService(
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         var stored = await settingsStore.LoadAsync(cancellationToken);
+
         stateStore.SetSettings(stored.DeviceSettings);
+        stateStore.SetAudioMode(stored.AudioMode);
         stateStore.SetDeviceStatus(stateStore.GetDeviceStatus() with { PortName = stored.PreferredDevicePort });
 
+        await audioService.SetModeAsync(stored.AudioMode, cancellationToken);
         await targetService.SelectTargetAsync(stored.ActiveTarget, cancellationToken);
 
         if (!string.IsNullOrWhiteSpace(stored.PreferredDevicePort))

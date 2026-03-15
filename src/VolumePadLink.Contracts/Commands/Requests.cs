@@ -13,4 +13,4 @@ public sealed record SelectTargetRequest(ActiveTargetDto Target);
 
 public sealed record ConnectDeviceRequest(string? PortName);
 
-public sealed record UpdateSettingsRequest(DeviceSettingsDto Settings);
+public sealed record UpdateSettingsRequest(AppSettingsDto Settings);

@@ -1,16 +1,14 @@
 ﻿using VolumePadLink.Contracts.DTOs;
 
-namespace VolumePadLink.Agent.Services.Interfaces;
+namespace VolumePadLink.Agent.Services.Audio;
 
-public interface IAudioService
+public interface IAudioBackend : IAsyncDisposable
 {
-    event Func<AudioGraphDto, Task>? GraphChanged;
+    AudioMode Mode { get; }
+
+    Task InitializeAsync(CancellationToken cancellationToken = default);
 
     Task<AudioGraphDto> GetGraphAsync(CancellationToken cancellationToken = default);
-
-    Task<AudioMode> GetModeAsync(CancellationToken cancellationToken = default);
-
-    Task<AudioMode> SetModeAsync(AudioMode mode, CancellationToken cancellationToken = default);
 
     Task SetMasterVolumeAsync(float value, CancellationToken cancellationToken = default);
 

@@ -63,11 +63,16 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <TextBox x:Name="DetentCountTextBox" Header="Detent Count" Grid.Column="0" />
                     <TextBox x:Name="DetentStrengthTextBox" Header="Detent Strength" Grid.Column="1" />
                     <TextBox x:Name="LedBrightnessTextBox" Header="LED Brightness" Grid.Column="2" />
                     <TextBox x:Name="DisplayBrightnessTextBox" Header="Display Brightness" Grid.Column="3" />
+                    <ComboBox x:Name="AudioModeComboBox" Header="Audio Mode" Grid.Column="4" Width="140">
+                        <ComboBoxItem Content="Real" />
+                        <ComboBoxItem Content="Simulated" />
+                    </ComboBox>
                 </Grid>
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <CheckBox x:Name="EncoderInvertCheckBox" Content="Invert Encoder" />
@@ -88,4 +93,3 @@
         </Grid>
     </ScrollViewer>
 </Window>
-

@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using VolumePadLink.Contracts.Abstractions;
 using VolumePadLink.Contracts.Commands;
 using VolumePadLink.Contracts.DTOs;
@@ -146,12 +147,15 @@ public sealed partial class MainWindow : Window
                 .Select(session => new AudioSessionItem(session.SessionId, session.DisplayName, session.Volume, session.Muted))
                 .ToList();
 
-            var settings = await _backendClient.SendCommandAsync<EmptyRequest, SettingsResponse>(CommandNames.SettingsGet, new EmptyRequest());
-            DetentCountTextBox.Text = settings.Settings.DetentCount.ToString(CultureInfo.InvariantCulture);
-            DetentStrengthTextBox.Text = settings.Settings.DetentStrength.ToString("0.00", CultureInfo.InvariantCulture);
-            LedBrightnessTextBox.Text = settings.Settings.LedBrightness.ToString("0.00", CultureInfo.InvariantCulture);
-            DisplayBrightnessTextBox.Text = settings.Settings.DisplayBrightness.ToString("0.00", CultureInfo.InvariantCulture);
-            EncoderInvertCheckBox.IsChecked = settings.Settings.EncoderInvert;
+            var settingsResponse = await _backendClient.SendCommandAsync<EmptyRequest, SettingsResponse>(CommandNames.SettingsGet, new EmptyRequest());
+            var settings = settingsResponse.Settings;
+
+            DetentCountTextBox.Text = settings.Device.DetentCount.ToString(CultureInfo.InvariantCulture);
+            DetentStrengthTextBox.Text = settings.Device.DetentStrength.ToString("0.00", CultureInfo.InvariantCulture);
+            LedBrightnessTextBox.Text = settings.Device.LedBrightness.ToString("0.00", CultureInfo.InvariantCulture);
+            DisplayBrightnessTextBox.Text = settings.Device.DisplayBrightness.ToString("0.00", CultureInfo.InvariantCulture);
+            EncoderInvertCheckBox.IsChecked = settings.Device.EncoderInvert;
+            SelectAudioMode(settings.AudioMode);
 
             StatusText.Text = "Refreshed.";
         }
@@ -159,6 +163,30 @@ public sealed partial class MainWindow : Window
         {
             StatusText.Text = $"Refresh failed: {ex.Message}";
         }
+    }
+
+    private void SelectAudioMode(AudioMode mode)
+    {
+        foreach (var item in AudioModeComboBox.Items)
+        {
+            if (item is ComboBoxItem comboItem && string.Equals(comboItem.Content?.ToString(), mode.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                AudioModeComboBox.SelectedItem = comboItem;
+                return;
+            }
+        }
+
+        AudioModeComboBox.SelectedIndex = 0;
+    }
+
+    private AudioMode ReadAudioModeSelection()
+    {
+        if (AudioModeComboBox.SelectedItem is ComboBoxItem comboItem && Enum.TryParse<AudioMode>(comboItem.Content?.ToString(), ignoreCase: true, out var mode))
+        {
+            return mode;
+        }
+
+        return AudioMode.Real;
     }
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e)
@@ -305,7 +333,7 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-            var settings = new DeviceSettingsDto(
+            var deviceSettings = new DeviceSettingsDto(
                 int.Parse(DetentCountTextBox.Text, CultureInfo.InvariantCulture),
                 float.Parse(DetentStrengthTextBox.Text, CultureInfo.InvariantCulture),
                 0.40f,
@@ -314,11 +342,14 @@ public sealed partial class MainWindow : Window
                 EncoderInvertCheckBox.IsChecked == true,
                 450);
 
+            var appSettings = new AppSettingsDto(deviceSettings, ReadAudioModeSelection());
+
             await _backendClient.SendCommandAsync<UpdateSettingsRequest, SettingsResponse>(
                 CommandNames.SettingsUpdate,
-                new UpdateSettingsRequest(settings));
+                new UpdateSettingsRequest(appSettings));
 
             StatusText.Text = "Settings saved.";
+            await RefreshAsync();
         }
         catch (Exception ex)
         {

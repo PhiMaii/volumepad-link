@@ -63,6 +63,8 @@ public sealed class JsonSettingsStore(IOptions<AgentOptions> options, ILogger<Js
         return new StoredAgentSettings(
             new ActiveTargetDto(TargetKinds.Master, null, null),
             new DeviceSettingsDto(24, 0.65f, 0.4f, 0.8f, 0.8f, false, 450),
+            AudioMode.Real,
             null);
     }
 }
+
