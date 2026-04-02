@@ -1,0 +1,51 @@
+# Auto-detect text files and normalize to LF in the repo
+* text=auto eol=lf
+
+# Source files
+*.cs           text diff=csharp
+*.csproj       text
+*.props        text
+*.targets      text
+*.sln          text eol=crlf
+*.xaml         text
+*.json         text
+*.md           text
+*.yml          text
+*.yaml         text
+*.xml          text
+*.config       text
+*.cmd          text eol=crlf
+*.bat          text eol=crlf
+*.ps1          text eol=crlf
+*.sh           text eol=lf
+
+# Web / plugin files
+*.js           text
+*.ts           text
+*.tsx          text
+*.jsx          text
+*.css          text
+*.scss         text
+*.html         text
+
+# Binary files
+*.png          binary
+*.jpg          binary
+*.jpeg         binary
+*.gif          binary
+*.ico          binary
+*.pdf          binary
+*.zip          binary
+*.7z           binary
+*.dll          binary
+*.exe          binary
+*.pdb          binary
+*.msix         binary
+*.msixbundle   binary
+*.appx         binary
+*.appxbundle   binary
+*.pfx          binary
+
+# Optional generated assets
+*.ttf          binary
+*.otf          binary

@@ -1,0 +1,16 @@
+<Solution>
+  <Configurations>
+    <Platform Name="ARM64" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="src/VolumePadLink.Agent/VolumePadLink.Agent.csproj" Id="dad1b539-a4bf-4641-84fb-517bfd9cb1fd" />
+  <Project Path="src/VolumePadLink.Contracts/VolumePadLink.Contracts.csproj" Id="d981cb5d-6a73-462a-97b1-09f8e4e106df" />
+  <Project Path="src/VolumePadLink.UI/VolumePadLink.UI.csproj" Id="ec78ecbf-4bf2-404b-8fae-92c611ed50ac">
+    <Platform Solution="*|ARM64" Project="ARM64" />
+    <Platform Solution="*|x64" Project="x64" />
+    <Platform Solution="*|x86" Project="x86" />
+    <Deploy />
+  </Project>
+  <Project Path="tests/VolumePadLink.Tests/VolumePadLink.Tests.csproj" Id="29113802-5669-4de6-82f7-7fc657a7f662" />
+</Solution>
