@@ -43,11 +43,13 @@ builder.Services.AddSingleton<IDebugService, DebugService>();
 builder.Services.AddSingleton<IAudioService, AudioService>();
 builder.Services.AddSingleton<IStreamDeckStateProvider, StreamDeckStateProvider>();
 builder.Services.AddSingleton<IStreamDeckCommandService, StreamDeckCommandService>();
+builder.Services.AddSingleton<StreamDeckTrafficMonitor>();
 
 builder.Services.AddHostedService<FixedInputService>();
 builder.Services.AddHostedService<MeterLoopService>();
 builder.Services.AddHostedService<IpcServerService>();
 builder.Services.AddHostedService<StartupCoordinatorService>();
+builder.Services.AddHostedService<StreamDeckEndpointService>();
 builder.Services.AddHostedService<TrayService>();
 
 var host = builder.Build();

@@ -6,4 +6,6 @@ public interface IStreamDeckCommandService
 {
     Task<StreamDeckState> ToggleMuteAsync(CancellationToken cancellationToken);
     Task<StreamDeckState> AdjustVolumeByStepAsync(double step, CancellationToken cancellationToken);
+    StreamDeckSettingsSnapshot GetSettingsSnapshot();
+    Task<StreamDeckSettingsSnapshot> UpdateSettingsAsync(StreamDeckSettingsPatch patch, CancellationToken cancellationToken);
 }

@@ -12,6 +12,7 @@ Planned Stream Deck capabilities:
 - toggle master mute on key press
 - increase/decrease master volume by configurable step `x`
 - expose device connection health to Stream Deck
+- change app/device settings (including detents/endstops) through a backend-managed apply path
 
 ## 2. Transport
 
@@ -89,6 +90,58 @@ Validation:
 
 Responses for 4.3/4.4 return updated `streamdeck.state`.
 
+### 4.5 Get Effective Settings
+
+- `GET /api/v1/streamdeck/settings`
+
+Response:
+
+```json
+{
+  "effective": {
+    "detentCount": 24,
+    "detentStrength": 0.65,
+    "lowEndstopEnabled": true
+  },
+  "state": {
+    "master": {
+      "volume": 0.64,
+      "muted": false
+    },
+    "deviceConnection": {
+      "state": "connected",
+      "portName": "COM3"
+    },
+    "capturedAtUtc": "2026-04-01T18:00:00.0000000Z"
+  }
+}
+```
+
+### 4.6 Update Settings (Partial Patch Supported)
+
+- `POST /api/v1/streamdeck/settings/update`
+
+Request example:
+
+```json
+{
+  "detentCount": 28,
+  "detentStrength": 0.75,
+  "lowEndstopEnabled": true,
+  "lowEndstopPosition": -0.90,
+  "lowEndstopStrength": 0.80,
+  "highEndstopEnabled": true,
+  "highEndstopPosition": 0.90,
+  "highEndstopStrength": 0.80
+}
+```
+
+Rules:
+
+- payload fields are optional (partial patch merge over current effective settings)
+- final apply uses the same backend validation/normalization as `settings.update`
+- response returns normalized/effective settings and updated `streamdeck.state`
+
 ## 5. WebSocket Events
 
 - Endpoint: `/api/v1/streamdeck/ws`
@@ -161,6 +214,35 @@ Suggested error codes:
 - `out_of_range`
 - `not_connected`
 - `internal_error`
+
+## 9. Debug Traffic Monitor Endpoints
+
+To simplify plugin development, the Stream Deck host also exposes endpoint-level traffic diagnostics.
+
+- `GET /api/v1/debug/streamdeck/traffic?sinceSeq=0&limit=200`
+- `DELETE /api/v1/debug/streamdeck/traffic`
+- `POST /api/v1/debug/streamdeck/traffic/clear`
+- `GET /api/v1/debug/streamdeck/endpoints`
+
+Traffic snapshot response:
+
+```json
+{
+  "latestSeq": 53,
+  "entries": [
+    {
+      "seq": 52,
+      "utcNow": "2026-04-01T18:00:00.0000000Z",
+      "direction": "in",
+      "transport": "http",
+      "name": "POST /api/v1/streamdeck/actions/master/mute/toggle",
+      "statusCode": null,
+      "note": null,
+      "payload": {}
+    }
+  ]
+}
+```
 
 ## 8. Architecture Requirement
 
