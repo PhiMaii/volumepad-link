@@ -1,29 +1,37 @@
-# VolumePad Link v1
+# VolumePad Desktop App (VolumePad Link)
 
-Windows companion app for VolumePad hardware.
+Windows companion application for VolumePad hardware.
+
+This repository is a submodule of the main VolumePad umbrella repo and provides:
+- backend runtime services
+- device communication
+- audio control integration
+- user interface
+
+## Role In The Full Stack
+
+In the full VolumePad architecture:
+- firmware handles on-device behavior
+- this desktop app is the host runtime and control plane
+- Stream Deck plugin (optional) talks to this app via local API endpoints
 
 ## Projects
 
-- `src/VolumePadLink.Contracts`: shared v2 protocol envelopes, DTOs, and settings validation.
-- `src/VolumePadLink.Agent`: backend runtime (IPC, serial/simulator device transport, audio, ring pipeline, settings, debug, tray).
-- `src/VolumePadLink.UI`: minimal WinUI client using named-pipe IPC.
-- `tests/VolumePadLink.Tests`: unit and integration tests.
+- `src/VolumePadLink.Contracts`: shared protocol envelopes, DTOs, and validation
+- `src/VolumePadLink.Agent`: backend runtime (IPC, device transport, audio, ring pipeline, settings, debug, tray)
+- `src/VolumePadLink.UI`: WinUI client
+- `tests/VolumePadLink.Tests`: unit and integration tests
 
-## Build
+## Build And Test
 
 ```powershell
 dotnet build VolumePadLink.slnx
-```
-
-## Test
-
-```powershell
 dotnet test tests/VolumePadLink.Tests/VolumePadLink.Tests.csproj
 ```
 
-## Protocol Docs
+## Documentation Policy
 
-- [Minimal app scope](docs/app-summary.md)
-- [Implementation guide](docs/app_implementation.md)
-- [Protocol v2](docs/protocol_v2.md)
-- [Stream Deck protocol (post-V1)](docs/streamdeck_protocol.md)
+Global architecture/protocol/layout docs are maintained only in:
+`D:\Daten\Programmieren\volumepad\docs`
+
+Use this submodule docs area only for desktop-app-specific notes that do not redefine global contracts.
